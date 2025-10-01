@@ -1,0 +1,127 @@
+// Note Range Limiter & Velocity Randomizer
+// Limits MIDI notes to a defined range and randomizes their velocity
+
+// Variable to store the last played note
+var lastNote = -1;
+
+// Generate note names from C-2 to G8 (MIDI 0-127)
+function generateNoteNames() {
+    var noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    var names = [];
+    
+    for (var i = 0; i < 128; i++) {
+        var octave = Math.floor(i / 12) - 2;  // MIDI octave starts at -2
+        var noteName = noteNames[i % 12];
+        names.push(noteName + octave);
+    }
+    
+    return names;
+}
+
+var PluginParameters = [
+    {
+        name: "Low Note",
+        type: "menu",
+        valueStrings: generateNoteNames(),
+        defaultValue: 36  // C2
+    },
+    {
+        name: "High Note",
+        type: "menu",
+        valueStrings: generateNoteNames(),
+        defaultValue: 60  // C4
+    },
+    {
+        name: "Min Velocity",
+        type: "lin",
+        minValue: 1,
+        maxValue: 127,
+        numberOfSteps: 126,
+        defaultValue: 40
+    },
+    {
+        name: "Max Velocity",
+        type: "lin",
+        minValue: 1,
+        maxValue: 127,
+        numberOfSteps: 126,
+        defaultValue: 100
+    }
+];
+
+function HandleMIDI(event) {
+    // Check if it's a Note On event
+    if (event instanceof NoteOn) {
+        var lowNote = GetParameter("Low Note");
+        var highNote = GetParameter("High Note");
+        var minVel = GetParameter("Min Velocity");
+        var maxVel = GetParameter("Max Velocity");
+        
+        var randomPitch;
+        var noteRange = highNote - lowNote;
+        
+        // If range has only one note, use it
+        if (noteRange === 0) {
+            randomPitch = lowNote;
+        } else {
+            // Generate random pitch, ensuring it's different from last note
+            do {
+                randomPitch = Math.floor(Math.random() * (noteRange + 1)) + lowNote;
+            } while (randomPitch === lastNote);
+        }
+        
+        // Store this note as the last played note
+        lastNote = randomPitch;
+        
+        // Randomize velocity between min and max
+        var velRange = maxVel - minVel;
+        var randomVel = Math.floor(Math.random() * (velRange + 1)) + minVel;
+        
+        // Clamp velocity to valid MIDI range (1-127)
+        randomVel = Math.max(1, Math.min(127, randomVel));
+        
+        // Set the new pitch and velocity
+        event.pitch = randomPitch;
+        event.velocity = randomVel;
+        
+        // Send the modified note
+        event.send();
+    } else {
+        // Pass through all other MIDI events unchanged
+        event.send();
+    }
+}
+
+function ParameterChanged(param, value) {
+    // Ensure Low Note doesn't exceed High Note
+    if (param === 0) { // Low Note changed
+        var highNote = GetParameter("High Note");
+        if (value > highNote) {
+            SetParameter("Low Note", highNote);
+        }
+    }
+    
+    // Ensure High Note doesn't go below Low Note
+    if (param === 1) { // High Note changed
+        var lowNote = GetParameter("Low Note");
+        if (value < lowNote) {
+            SetParameter("High Note", lowNote);
+        }
+    }
+    
+    // Ensure Min Velocity doesn't exceed Max Velocity
+    if (param === 2) { // Min Velocity changed
+        var maxVel = GetParameter("Max Velocity");
+        if (value > maxVel) {
+            SetParameter("Min Velocity", maxVel);
+        }
+    }
+    
+    // Ensure Max Velocity doesn't go below Min Velocity
+    if (param === 3) { // Max Velocity changed
+        var minVel = GetParameter("Min Velocity");
+        if (value < minVel) {
+            SetParameter("Max Velocity", minVel);
+        }
+    }
+}
